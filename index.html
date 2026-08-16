@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Trailhead — Step Counter</title>
+<meta name="description" content="Penghitung langkah berbasis sensor akselerometer perangkat">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink: #101d16;
+    --panel: #1a2b21;
+    --panel-2: #21362a;
+    --line: #2c4535;
+    --tan: #c9a66b;
+    --amber: #e8a33d;
+    --sage: #7c9885;
+    --cream: #f1ede3;
+    --cream-dim: #c7c2b4;
+    --danger: #c9683f;
+    --radius: 14px;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color: transparent;}
+  html,body{margin:0; padding:0;}
+  body{
+    background: var(--ink);
+    color: var(--cream);
+    font-family: 'Manrope', sans-serif;
+    min-height: 100vh;
+    min-height: 100dvh;
+    display:flex;
+    justify-content:center;
+    position: relative;
+    overflow-x:hidden;
+  }
+
+  /* ambient topographic contour lines */
+  .contours{
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    opacity: 0.35;
+    pointer-events: none;
+  }
+  .contours svg{ width:100%; height:100%; }
+  .contours path{
+    fill:none;
+    stroke: var(--sage);
+    stroke-width: 1;
+    opacity: 0.28;
+  }
+  .contours path:nth-child(odd){ stroke: var(--line); opacity: 0.4; }
+
+  .app{
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 460px;
+    min-height: 100vh;
+    min-height: 100dvh;
+    padding: 28px 20px 34px;
+    display:flex;
+    flex-direction:column;
+    gap: 18px;
+  }
+
+  header{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    padding: 4px 2px 2px;
+  }
+  .brand{
+    display:flex;
+    flex-direction:column;
+    gap:2px;
+  }
+  .brand .mark{
+    font-family:'JetBrains Mono', monospace;
+    font-size:11px;
+    letter-spacing: 0.22em;
+    color: var(--tan);
+    text-transform: uppercase;
+  }
+  .brand h1{
+    margin:0;
+    font-size: 21px;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+  }
+  .date-chip{
+    font-family:'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--cream-dim);
+    text-align:right;
+  }
+
+  /* ---- odometer ---- */
+  .odometer-card{
+    background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 26px 18px 20px;
+    position: relative;
+    overflow: hidden;
+  }
+  .odometer-card::before{
+    content:"";
+    position:absolute;
+    top:0; left:0; right:0; height:3px;
+    background: linear-gradient(90deg, transparent, var(--amber), transparent);
+    opacity: 0.7;
+  }
+  .odometer-label{
+    font-family:'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--sage);
+    text-align:center;
+    margin-bottom: 14px;
+  }
+  .odometer{
+    display:flex;
+    justify-content:center;
+    gap: 4px;
+    padding: 10px 6px;
+    background: #0c1610;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    box-shadow: inset 0 2px 10px rgba(0,0,0,0.5);
+  }
+  .digit-slot{
+    width: 15%;
+    max-width: 46px;
+    aspect-ratio: 3/4.2;
+    background: #0a130e;
+    border-radius: 6px;
+    overflow:hidden;
+    position: relative;
+    border: 1px solid #1f3226;
+  }
+  .digit-slot .reel{
+    position:absolute;
+    inset:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-family:'JetBrains Mono', monospace;
+    font-weight: 700;
+    font-size: clamp(22px, 7vw, 32px);
+    color: var(--amber);
+    text-shadow: 0 0 12px rgba(232,163,61,0.35);
+    transition: transform 0.28s cubic-bezier(.3,1.4,.5,1), opacity 0.28s ease;
+  }
+  .digit-slot .reel.flip-out{ transform: translateY(-100%); opacity: 0; }
+  .digit-slot .reel.flip-in{ animation: rollIn 0.32s cubic-bezier(.2,1.4,.4,1); }
+  @keyframes rollIn{
+    from{ transform: translateY(100%); opacity:0; }
+    to{ transform: translateY(0); opacity:1; }
+  }
+
+  .status-row{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap: 8px;
+    margin-top: 14px;
+    font-family:'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--cream-dim);
+  }
+  .dot{
+    width: 8px; height:8px; border-radius:50%;
+    background: var(--sage);
+    box-shadow: 0 0 0 rgba(124,152,133,0.6);
+  }
+  .dot.active{
+    background: var(--amber);
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes pulse{
+    0%,100%{ box-shadow: 0 0 0 0 rgba(232,163,61,0.5); }
+    50%{ box-shadow: 0 0 0 6px rgba(232,163,61,0); }
+  }
+
+  /* ---- trail progress ---- */
+  .trail-card{
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 16px 18px;
+  }
+  .trail-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom: 10px;
+  }
+  .trail-head .t{
+    font-size: 12px;
+    color: var(--cream-dim);
+    letter-spacing: 0.04em;
+  }
+  .trail-head .goal-input{
+    background:transparent;
+    border:none;
+    color: var(--tan);
+    font-family:'JetBrains Mono', monospace;
+    font-size: 12px;
+    width: 70px;
+    text-align:right;
+    border-bottom: 1px dashed var(--line);
+  }
+  .trail-head .goal-input:focus{ outline:none; border-color: var(--tan); }
+  .trail-path{
+    position:relative;
+    height: 34px;
+  }
+  .trail-path svg{ width:100%; height:100%; overflow: visible; }
+  .trail-bg{ stroke: var(--line); stroke-width:2; fill:none; stroke-dasharray: 1 7; stroke-linecap: round; }
+  .trail-fill{ stroke: var(--amber); stroke-width:2.5; fill:none; stroke-linecap: round; transition: stroke-dashoffset 0.4s ease; }
+  .trail-marker{
+    position:absolute;
+    top: 50%;
+    transform: translate(-50%,-50%);
+    width: 14px; height:14px;
+    border-radius:50%;
+    background: var(--amber);
+    box-shadow: 0 0 10px rgba(232,163,61,0.6);
+    transition: left 0.4s ease;
+  }
+
+  /* ---- stats grid ---- */
+  .stats{
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .stat-card{
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+  }
+  .stat-card .v{
+    font-family:'JetBrains Mono', monospace;
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--cream);
+  }
+  .stat-card .v span{ font-size: 12px; color: var(--sage); font-weight:500; margin-left:2px; }
+  .stat-card .l{
+    font-size: 11px;
+    color: var(--cream-dim);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-top: 4px;
+  }
+
+  /* ---- controls ---- */
+  .controls{
+    display:flex;
+    gap: 10px;
+    margin-top: 4px;
+  }
+  button{
+    font-family: 'Manrope', sans-serif;
+    font-weight: 700;
+    font-size: 14px;
+    border-radius: 12px;
+    border: none;
+    padding: 15px 16px;
+    cursor: pointer;
+    transition: transform 0.12s ease, filter 0.12s ease;
+  }
+  button:active{ transform: scale(0.97); }
+  .btn-primary{
+    flex: 2;
+    background: var(--amber);
+    color: #21160a;
+  }
+  .btn-primary.stop{ background: var(--danger); color: #241109; }
+  .btn-secondary{
+    flex: 1;
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--cream-dim);
+  }
+  .btn-secondary:hover{ border-color: var(--tan); color: var(--tan); }
+
+  /* ---- sensitivity ---- */
+  .sens-card{
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+  }
+  .sens-head{
+    display:flex;
+    justify-content:space-between;
+    font-size: 12px;
+    color: var(--cream-dim);
+    margin-bottom: 10px;
+  }
+  .sens-head b{ color: var(--tan); font-family:'JetBrains Mono', monospace; }
+  input[type="range"]{
+    -webkit-appearance:none;
+    width: 100%;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--line);
+    outline:none;
+  }
+  input[type="range"]::-webkit-slider-thumb{
+    -webkit-appearance:none;
+    width: 18px; height:18px;
+    border-radius:50%;
+    background: var(--tan);
+    border: 2px solid var(--ink);
+    cursor:pointer;
+  }
+  input[type="range"]::-moz-range-thumb{
+    width: 18px; height:18px;
+    border-radius:50%;
+    background: var(--tan);
+    border: 2px solid var(--ink);
+    cursor:pointer;
+  }
+
+  footer{
+    text-align:center;
+    font-size: 11px;
+    color: var(--line);
+    font-family:'JetBrains Mono', monospace;
+    letter-spacing: 0.05em;
+    margin-top: 6px;
+  }
+
+  /* ---- permission / unsupported gate ---- */
+  .gate{
+    position: fixed;
+    inset:0;
+    z-index: 10;
+    background: var(--ink);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding: 28px;
+  }
+  .gate.hidden{ display:none; }
+  .gate-card{
+    max-width: 380px;
+    text-align:center;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap: 14px;
+  }
+  .gate-icon{
+    width:64px; height:64px;
+    border-radius: 18px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .gate h2{ margin:0; font-size: 20px; }
+  .gate p{ margin:0; color: var(--cream-dim); font-size: 14px; line-height: 1.6; }
+  .gate button{
+    margin-top: 6px;
+    background: var(--amber);
+    color:#21160a;
+    padding: 15px 28px;
+  }
+  .gate .fine{
+    font-family:'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--sage);
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    .dot.active{ animation:none; }
+    .digit-slot .reel{ transition:none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="contours" aria-hidden="true">
+  <svg viewBox="0 0 400 800" preserveAspectRatio="none">
+    <path d="M-20,120 C 80,90 150,150 260,110 S 420,140 460,100" />
+    <path d="M-20,220 C 60,260 180,190 260,240 S 400,220 460,260" />
+    <path d="M-20,340 C 100,300 160,370 280,330 S 420,360 460,320" />
+    <path d="M-20,460 C 90,500 200,430 300,480 S 420,460 460,500" />
+    <path d="M-20,580 C 70,550 190,610 290,560 S 420,590 460,550" />
+    <path d="M-20,700 C 110,730 210,670 310,710 S 430,690 460,730" />
+  </svg>
+</div>
+
+<div class="app">
+
+  <header>
+    <div class="brand">
+      <span class="mark">Trailhead</span>
+      <h1>Step Counter</h1>
+    </div>
+    <div class="date-chip" id="dateChip">—</div>
+  </header>
+
+  <section class="odometer-card">
+    <div class="odometer-label">Total Langkah</div>
+    <div class="odometer" id="odometer"></div>
+    <div class="status-row">
+      <span class="dot" id="statusDot"></span>
+      <span id="statusText">Berhenti</span>
+    </div>
+  </section>
+
+  <section class="trail-card">
+    <div class="trail-head">
+      <span class="t">Target harian</span>
+      <input class="goal-input" id="goalInput" type="number" inputmode="numeric" value="6000" min="100" step="100">
+    </div>
+    <div class="trail-path">
+      <svg viewBox="0 0 100 10" preserveAspectRatio="none">
+        <line class="trail-bg" x1="1" y1="5" x2="99" y2="5"/>
+        <line class="trail-fill" id="trailFill" x1="1" y1="5" x2="99" y2="5" stroke-dasharray="98" stroke-dashoffset="98"/>
+      </svg>
+      <div class="trail-marker" id="trailMarker" style="left:1%"></div>
+    </div>
+  </section>
+
+  <section class="stats">
+    <div class="stat-card">
+      <div class="v" id="statDistance">0.00<span>km</span></div>
+      <div class="l">Jarak tempuh</div>
+    </div>
+    <div class="stat-card">
+      <div class="v" id="statCalories">0<span>kkal</span></div>
+      <div class="l">Kalori terbakar</div>
+    </div>
+    <div class="stat-card">
+      <div class="v" id="statPace">0<span>lgk/mnt</span></div>
+      <div class="l">Kadensi</div>
+    </div>
+    <div class="stat-card">
+      <div class="v" id="statTime">00:00</div>
+      <div class="l">Durasi sesi</div>
+    </div>
+  </section>
+
+  <section class="sens-card">
+    <div class="sens-head">
+      <span>Sensitivitas deteksi</span>
+      <b id="sensVal">1.20</b>
+    </div>
+    <input type="range" id="sensSlider" min="0.6" max="2.2" step="0.05" value="1.2">
+  </section>
+
+  <div class="controls">
+    <button class="btn-primary" id="toggleBtn">Mulai</button>
+    <button class="btn-secondary" id="resetBtn">Reset</button>
+  </div>
+
+  <footer>Data tersimpan lokal di perangkat ini · tidak dikirim ke server</footer>
+</div>
+
+<div class="gate" id="gate">
+  <div class="gate-card">
+    <div class="gate-icon">
+      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#c9a66b" stroke-width="1.6">
+        <path d="M12 2 L12 6" stroke-linecap="round"/>
+        <path d="M12 18 L12 22" stroke-linecap="round"/>
+        <circle cx="12" cy="12" r="7"/>
+        <path d="M12 9 L12 12 L14 14" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <h2 id="gateTitle">Izinkan Akses Sensor</h2>
+    <p id="gateText">Aplikasi ini butuh akses ke sensor gerak (akselerometer) perangkatmu untuk menghitung langkah. Tekan tombol di bawah untuk mengizinkan.</p>
+    <button id="gateBtn">Izinkan &amp; Mulai</button>
+    <span class="fine" id="gateFine">Trailhead · on-device motion sensing</span>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------- state ----------
+  const STORAGE_KEY = "trailhead-stepcounter-v1";
+  const today = new Date().toISOString().slice(0,10);
+
+  let state = {
+    date: today,
+    steps: 0,
+    goal: 6000,
+    sensitivity: 1.2,
+    sessionSeconds: 0
+  };
+
+  const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+  if (saved && saved.date === today) {
+    state = Object.assign(state, saved);
+  }
+
+  let tracking = false;
+  let gravity = 9.8;
+  let peaked = false;
+  let lastStepTime = 0;
+  const MIN_STEP_INTERVAL = 280; // ms, ~214 steps/min cap
+  const ALPHA = 0.85; // low-pass filter constant
+
+  let recentStepTimes = [];
+  let sessionTimer = null;
+
+  // ---------- dom refs ----------
+  const odometerEl = document.getElementById("odometer");
+  const statusDot = document.getElementById("statusDot");
+  const statusText = document.getElementById("statusText");
+  const toggleBtn = document.getElementById("toggleBtn");
+  const resetBtn = document.getElementById("resetBtn");
+  const dateChip = document.getElementById("dateChip");
+  const goalInput = document.getElementById("goalInput");
+  const trailFill = document.getElementById("trailFill");
+  const trailMarker = document.getElementById("trailMarker");
+  const statDistance = document.getElementById("statDistance");
+  const statCalories = document.getElementById("statCalories");
+  const statPace = document.getElementById("statPace");
+  const statTime = document.getElementById("statTime");
+  const sensSlider = document.getElementById("sensSlider");
+  const sensVal = document.getElementById("sensVal");
+  const gate = document.getElementById("gate");
+  const gateBtn = document.getElementById("gateBtn");
+  const gateTitle = document.getElementById("gateTitle");
+  const gateText = document.getElementById("gateText");
+  const gateFine = document.getElementById("gateFine");
+
+  const DIGIT_COUNT = 6;
+
+  function buildOdometer(){
+    odometerEl.innerHTML = "";
+    for (let i=0; i<DIGIT_COUNT; i++){
+      const slot = document.createElement("div");
+      slot.className = "digit-slot";
+      const reel = document.createElement("div");
+      reel.className = "reel";
+      reel.textContent = "0";
+      slot.appendChild(reel);
+      odometerEl.appendChild(slot);
+    }
+  }
+  buildOdometer();
+
+  function renderOdometer(value, animate){
+    const str = String(Math.max(0, Math.floor(value))).padStart(DIGIT_COUNT, "0").slice(-DIGIT_COUNT);
+    const slots = odometerEl.querySelectorAll(".digit-slot");
+    slots.forEach((slot, i) => {
+      const reel = slot.querySelector(".reel");
+      const newDigit = str[i];
+      if (reel.textContent !== newDigit) {
+        if (animate) {
+          reel.classList.add("flip-out");
+          setTimeout(() => {
+            reel.textContent = newDigit;
+            reel.classList.remove("flip-out");
+            reel.classList.add("flip-in");
+            setTimeout(() => reel.classList.remove("flip-in"), 320);
+          }, 90);
+        } else {
+          reel.textContent = newDigit;
+        }
+      }
+    });
+  }
+
+  function formatTime(totalSeconds){
+    const m = Math.floor(totalSeconds/60).toString().padStart(2,"0");
+    const s = Math.floor(totalSeconds%60).toString().padStart(2,"0");
+    return m + ":" + s;
+  }
+
+  function updateStats(){
+    const strideMeters = 0.762;
+    const distanceKm = (state.steps * strideMeters) / 1000;
+    const calories = state.steps * 0.045;
+
+    // cadence from steps in the last 60s window
+    const now = Date.now();
+    recentStepTimes = recentStepTimes.filter(t => now - t <= 60000);
+    const cadence = recentStepTimes.length;
+
+    statDistance.innerHTML = distanceKm.toFixed(2) + "<span>km</span>";
+    statCalories.innerHTML = Math.round(calories) + "<span>kkal</span>";
+    statPace.innerHTML = cadence + "<span>lgk/mnt</span>";
+    statTime.textContent = formatTime(state.sessionSeconds);
+
+    const goal = Math.max(1, state.goal);
+    const pct = Math.min(1, state.steps / goal);
+    const dashLength = 98;
+    trailFill.setAttribute("stroke-dashoffset", String(dashLength * (1 - pct)));
+    trailMarker.style.left = (1 + pct * 98) + "%";
+  }
+
+  function persist(){
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+
+  function addStep(){
+    state.steps += 1;
+    recentStepTimes.push(Date.now());
+    renderOdometer(state.steps, true);
+    updateStats();
+    persist();
+  }
+
+  // ---------- motion handling ----------
+  function handleMotion(event){
+    const acc = event.accelerationIncludingGravity || event.acceleration;
+    if (!acc || acc.x === null) return;
+
+    const magnitude = Math.sqrt(
+      (acc.x||0)*(acc.x||0) + (acc.y||0)*(acc.y||0) + (acc.z||0)*(acc.z||0)
+    );
+
+    gravity = ALPHA * gravity + (1 - ALPHA) * magnitude;
+    const delta = magnitude - gravity;
+    const threshold = state.sensitivity;
+    const now = Date.now();
+
+    if (!peaked && delta > threshold && (now - lastStepTime) > MIN_STEP_INTERVAL) {
+      peaked = true;
+      lastStepTime = now;
+      addStep();
+    } else if (delta < threshold * 0.4) {
+      peaked = false;
+    }
+  }
+
+  function startSessionTimer(){
+    if (sessionTimer) return;
+    sessionTimer = setInterval(() => {
+      state.sessionSeconds += 1;
+      updateStats();
+      persist();
+    }, 1000);
+  }
+  function stopSessionTimer(){
+    clearInterval(sessionTimer);
+    sessionTimer = null;
+  }
+
+  function setTracking(on){
+    tracking = on;
+    if (on) {
+      window.addEventListener("devicemotion", handleMotion, true);
+      statusDot.classList.add("active");
+      statusText.textContent = "Merekam langkah…";
+      toggleBtn.textContent = "Berhenti";
+      toggleBtn.classList.add("stop");
+      startSessionTimer();
+    } else {
+      window.removeEventListener("devicemotion", handleMotion, true);
+      statusDot.classList.remove("active");
+      statusText.textContent = "Berhenti";
+      toggleBtn.textContent = "Mulai";
+      toggleBtn.classList.remove("stop");
+      stopSessionTimer();
+    }
+  }
+
+  // ---------- permission / support gate ----------
+  function motionSupported(){
+    return typeof window.DeviceMotionEvent !== "undefined";
+  }
+
+  function needsIOSPermission(){
+    return typeof DeviceMotionEvent !== "undefined" &&
+           typeof DeviceMotionEvent.requestPermission === "function";
+  }
+
+  function showGate(mode){
+    gate.classList.remove("hidden");
+    if (mode === "unsupported") {
+      gateTitle.textContent = "Sensor Tidak Tersedia";
+      gateText.textContent = "Perangkat atau browser ini tidak mendukung sensor akselerometer (DeviceMotion). Coba buka halaman ini lewat browser di HP kamu, bukan laptop/desktop.";
+      gateBtn.textContent = "Mengerti";
+      gateBtn.onclick = () => { gate.classList.add("hidden"); };
+    } else if (mode === "denied") {
+      gateTitle.textContent = "Izin Ditolak";
+      gateText.textContent = "Akses sensor gerak ditolak. Aktifkan lewat pengaturan browser (Settings → Safari → Motion & Orientation Access) lalu muat ulang halaman.";
+      gateBtn.textContent = "Coba Lagi";
+      gateBtn.onclick = requestAndStart;
+    } else {
+      gateTitle.textContent = "Izinkan Akses Sensor";
+      gateText.textContent = "Aplikasi ini butuh akses ke sensor gerak (akselerometer) perangkatmu untuk menghitung langkah. Tekan tombol di bawah untuk mengizinkan.";
+      gateBtn.textContent = "Izinkan & Mulai";
+      gateBtn.onclick = requestAndStart;
+    }
+  }
+
+  function hideGate(){
+    gate.classList.add("hidden");
+  }
+
+  function requestAndStart(){
+    if (needsIOSPermission()) {
+      DeviceMotionEvent.requestPermission().then(result => {
+        if (result === "granted") {
+          hideGate();
+          setTracking(true);
+        } else {
+          showGate("denied");
+        }
+      }).catch(() => showGate("denied"));
+    } else if (motionSupported()) {
+      hideGate();
+      setTracking(true);
+    } else {
+      showGate("unsupported");
+    }
+  }
+
+  // ---------- controls ----------
+  toggleBtn.addEventListener("click", () => {
+    if (tracking) {
+      setTracking(false);
+      return;
+    }
+    if (needsIOSPermission()) {
+      showGate("prompt");
+    } else if (motionSupported()) {
+      setTracking(true);
+    } else {
+      showGate("unsupported");
+    }
+  });
+
+  resetBtn.addEventListener("click", () => {
+    if (!confirm("Reset jumlah langkah dan sesi hari ini?")) return;
+    setTracking(false);
+    state.steps = 0;
+    state.sessionSeconds = 0;
+    recentStepTimes = [];
+    renderOdometer(0, false);
+    updateStats();
+    persist();
+  });
+
+  goalInput.addEventListener("change", () => {
+    const v = parseInt(goalInput.value, 10);
+    state.goal = (isFinite(v) && v > 0) ? v : 6000;
+    updateStats();
+    persist();
+  });
+
+  sensSlider.addEventListener("input", () => {
+    state.sensitivity = parseFloat(sensSlider.value);
+    sensVal.textContent = state.sensitivity.toFixed(2);
+    persist();
+  });
+
+  // ---------- init ----------
+  function init(){
+    dateChip.textContent = new Date().toLocaleDateString("id-ID", {
+      weekday: "short", day: "numeric", month: "short"
+    });
+    goalInput.value = state.goal;
+    sensSlider.value = state.sensitivity;
+    sensVal.textContent = state.sensitivity.toFixed(2);
+    renderOdometer(state.steps, false);
+    updateStats();
+
+    if (!motionSupported()) {
+      showGate("unsupported");
+    } else if (needsIOSPermission()) {
+      showGate("prompt");
+    } else {
+      // Android / desktop browsers that don't require explicit permission
+      hideGate();
+    }
+  }
+
+  init();
+})();
+</script>
+
+</body>
+</html>
