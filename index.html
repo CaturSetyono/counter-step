@@ -260,6 +260,48 @@
     margin-top: 4px;
   }
 
+  /* ---- mode toggle (jalan/lari) ---- */
+  .mode-card{
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+  }
+  .mode-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom: 10px;
+    font-size: 12px;
+    color: var(--cream-dim);
+  }
+  .mode-head .detected{
+    font-family:'JetBrains Mono', monospace;
+    color: var(--tan);
+    font-size: 11px;
+  }
+  .mode-seg{
+    display:flex;
+    background: #0c1610;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 3px;
+    gap: 3px;
+  }
+  .mode-seg button{
+    flex:1;
+    padding: 9px 8px;
+    font-size: 13px;
+    font-weight: 600;
+    background: transparent;
+    color: var(--cream-dim);
+    border-radius: 7px;
+  }
+  .mode-seg button.active{
+    background: var(--amber);
+    color: #21160a;
+  }
+
   /* ---- controls ---- */
   .controls{
     display:flex;
@@ -459,6 +501,18 @@
     <input type="range" id="sensSlider" min="0.6" max="2.2" step="0.05" value="1.2">
   </section>
 
+  <section class="mode-card">
+    <div class="mode-head">
+      <span>Mode langkah</span>
+      <span class="detected" id="modeDetected">jalan · 60 cm</span>
+    </div>
+    <div class="mode-seg">
+      <button type="button" id="modeAuto" class="active">Otomatis</button>
+      <button type="button" id="modeWalk">Jalan</button>
+      <button type="button" id="modeRun">Lari</button>
+    </div>
+  </section>
+
   <div class="controls">
     <button class="btn-primary" id="toggleBtn">Mulai</button>
     <button class="btn-secondary" id="resetBtn">Reset</button>
@@ -497,7 +551,8 @@
     steps: 0,
     goal: 6000,
     sensitivity: 1.2,
-    sessionSeconds: 0
+    sessionSeconds: 0,
+    mode: "auto" // "auto" | "walk" | "run"
   };
 
   const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
@@ -536,6 +591,10 @@
   const gateTitle = document.getElementById("gateTitle");
   const gateText = document.getElementById("gateText");
   const gateFine = document.getElementById("gateFine");
+  const modeAuto = document.getElementById("modeAuto");
+  const modeWalk = document.getElementById("modeWalk");
+  const modeRun = document.getElementById("modeRun");
+  const modeDetected = document.getElementById("modeDetected");
 
   const DIGIT_COUNT = 6;
 
@@ -581,15 +640,32 @@
     return m + ":" + s;
   }
 
-  function updateStats(){
-    const strideMeters = 0.60; // rata-rata panjang langkah dewasa: 50–70 cm, ambil titik tengah 60 cm
-    const distanceMeters = state.steps * strideMeters;
-    const calories = state.steps * 0.045;
+  // rentang panjang langkah dewasa (cm), titik tengah dipakai sebagai default
+  const STRIDE_CM = {
+    walk: { min: 50, max: 65, mid: 60 },  // jalan santai s/d cepat
+    run:  { min: 90, max: 130, mid: 110 } // jogging s/d lari sedang
+  };
+  const CADENCE_RUN_THRESHOLD = 140; // lgk/mnt: di atas ini dianggap lari saat mode auto
 
-    // cadence from steps in the last 60s window
+  function getStrideMeters(cadence){
+    let effectiveMode = state.mode;
+    if (effectiveMode === "auto") {
+      effectiveMode = cadence >= CADENCE_RUN_THRESHOLD ? "run" : "walk";
+    }
+    const cm = STRIDE_CM[effectiveMode].mid;
+    modeDetected.textContent = (effectiveMode === "run" ? "lari" : "jalan") + " · " + cm + " cm";
+    return cm / 100;
+  }
+
+  function updateStats(){
+    // cadence dulu, karena dipakai buat nentuin stride di mode auto
     const now = Date.now();
     recentStepTimes = recentStepTimes.filter(t => now - t <= 60000);
     const cadence = recentStepTimes.length;
+
+    const strideMeters = getStrideMeters(cadence);
+    const distanceMeters = state.steps * strideMeters;
+    const calories = state.steps * 0.045;
 
     statDistance.innerHTML = Math.round(distanceMeters) + "<span>m</span>";
     statCalories.innerHTML = Math.round(calories) + "<span>kkal</span>";
@@ -761,6 +837,17 @@
     persist();
   });
 
+  function setMode(newMode){
+    state.mode = newMode;
+    [modeAuto, modeWalk, modeRun].forEach(btn => btn.classList.remove("active"));
+    ({ auto: modeAuto, walk: modeWalk, run: modeRun })[newMode].classList.add("active");
+    updateStats();
+    persist();
+  }
+  modeAuto.addEventListener("click", () => setMode("auto"));
+  modeWalk.addEventListener("click", () => setMode("walk"));
+  modeRun.addEventListener("click", () => setMode("run"));
+
   // ---------- init ----------
   function init(){
     dateChip.textContent = new Date().toLocaleDateString("id-ID", {
@@ -769,6 +856,8 @@
     goalInput.value = state.goal;
     sensSlider.value = state.sensitivity;
     sensVal.textContent = state.sensitivity.toFixed(2);
+    [modeAuto, modeWalk, modeRun].forEach(btn => btn.classList.remove("active"));
+    ({ auto: modeAuto, walk: modeWalk, run: modeRun })[state.mode].classList.add("active");
     renderOdometer(state.steps, false);
     updateStats();
 
